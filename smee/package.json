@@ -1,0 +1,15 @@
+{
+  "name": "smee",
+  "version": "1.0.0",
+  "description": "smee",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "smee": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "smee-client": "^1.2.2"
+  }
+}
