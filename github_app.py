@@ -85,7 +85,8 @@ class GithubAppInstallation(object):
         self.app = app
         self.installation_id = installation_id
 
-    def get_auth_token(self):
+    @property
+    def token(self):
         if self.installation_id in tokens:
             expiration = tokens[self.installation_id]["expires_at"]
             testtime = datetime.now() - timedelta(minutes=3)
@@ -108,8 +109,7 @@ class GithubAppInstallation(object):
         return self.app.request("app/installations/%s" % (self.installation_id,))
 
     def get_github_client(self):
-        token = self.get_auth_token()
-        gh = Github(token, user_agent=self.app.user_agent)
+        gh = Github(self.token, user_agent=self.app.user_agent)
         # gh.set_user_agent(self.app.user_agent)
         return gh
 

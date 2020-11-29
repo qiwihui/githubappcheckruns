@@ -3,3 +3,5 @@ cryptography>=2.1.4,<3
 requests>=2.18.0,<2.25.0
 git+https://github.com/PyGithub/PyGithub.git
 flask
+GitPython
+pylint
