@@ -87,7 +87,7 @@ def initiate_check_run():
             conclusion = "neutral"
             for file in output:
 
-                file_path = re.sub(f"/{repo_dir}\/{repository}\//", "", file["path"])
+                file_path = re.sub(f"{repo_dir}/{repository}/", "", file["path"])
                 annotation_level = "notice"
 
                 # Parse each offense to get details and location
@@ -161,27 +161,23 @@ def take_requested_action():
             head_branch,
             installation_token=github_app.github_app_installation.token,
         )
-
-        # Automatically correct RuboCop style errors
-        # TODO: fix comand
-        command = f"pylint {repo_dir}/{repository}/**/*.py -f json"
+        # Automatically correct style errors
+        # fix with autopep8
+        command = f"autopep8 -a -i {repo_dir}/{repository}/**/*.py"
         report = subprocess.getoutput(command)
-        # output = json.loads(report)
 
         # create new branch
         new_branch = f"fix_rubocop_notices_{check_run_id}"
         pushed = False
         try:
             repo = git.Repo(f"{repo_dir}/{repository}")
-            current = repo.create_head(new_branch)
-            current.checkout()
-            repo.config_writer().set_value("user", "name", config.GITHUB_APP_USER_NAME).release()
-            repo.config_writer().set_value("user", "email", config.GITHUB_APP_USER_EMAIL).release()
             if repo.index.diff(None) or repo.untracked_files:
+                current = repo.create_head(new_branch)
+                current.checkout()
+                repo.config_writer().set_value("user", "name", config.GITHUB_APP_USER_NAME).release()
+                repo.config_writer().set_value("user", "email", config.GITHUB_APP_USER_EMAIL).release()
                 repo.git.add(update=True)
-                repo.git.commit("Automatically fix Octo RuboCop notices.")
-                origin = repo.remote(name="origin")
-                origin.push()
+                repo.git.commit("-m", "Automatically fix Octo RuboCop notices.")
                 repo.git.push("--set-upstream", "origin", current)
                 pushed = True
             else:
@@ -209,8 +205,8 @@ def clone_repository(full_repo_name, repository, ref, installation_token, clean=
     git.Git(repo_dir).clone(f"https://x-access-token:{installation_token}@github.com/{full_repo_name}.git")
     # pull and chekout
     repo = git.Repo(f"{repo_dir}/{repository}")
-    repo.git.checkout(ref)
     repo.git.pull()
+    repo.git.checkout(ref)
     if clean:
         shutil.rmtree(tempdir, ignore_errors=True)
     return repo_dir

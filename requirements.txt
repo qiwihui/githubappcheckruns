@@ -5,3 +5,5 @@ git+https://github.com/PyGithub/PyGithub.git
 flask
 GitPython
 pylint
+autopep8
+pysmee
