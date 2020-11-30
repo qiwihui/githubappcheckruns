@@ -1,4 +1,5 @@
 import subprocess
+from tempfile import tempdir
 import config
 import git
 import json
@@ -80,11 +81,12 @@ def initiate_check_run():
         # RuboCop reports the number of errors found in "offense_count"
         if len(output) == 0:
             conclusion = "success"
+            actions = None
         else:
             conclusion = "neutral"
             for file in output:
 
-                file_path = re.sub(f"/{repository}\//", "", file["path"])
+                file_path = re.sub(f"/{repo_dir}\/{repository}\//", "", file["path"])
                 annotation_level = "notice"
 
                 # Parse each offense to get details and location
@@ -114,6 +116,14 @@ def initiate_check_run():
                 #     annotation.merge({"start_column": start_column, "end_column": end_column})
 
                 annotations.append(annotation)
+            # Need fix action
+            actions = [
+                {
+                    "label": "Fix this",
+                    "description": "Automatically fix all linter notices.",
+                    "identifier": "fix_rubocop_notices",
+                }
+            ]
         summary = (
             f"Summary\n"
             f"- Offense count: {len(output)}\n"
@@ -132,24 +142,56 @@ def initiate_check_run():
                 "text": text,
                 "annotations": annotations,
             },
-            actions=[
-                {
-                    "label": "Fix this",
-                    "description": "Automatically fix all linter notices.",
-                    "identifier": "fix_rubocop_notices",
-                }
-            ],
+            actions=actions,
         )
 
 
-def clone_repository(full_repo_name, repository, ref, installation_token):
-    if not os.path.exists(repository):
-        Path(repository).mkdir(parents=True)
-    repo = git.Git(repository).clone(f"https://x-access-token:{installation_token}@github.com/{full_repo_name}.git")
+@github_app.on(["check_run.requested_action"])
+def take_requested_action():
+    full_repo_name = github_app.payload["repository"]["full_name"]
+    repository = github_app.payload["repository"]["name"]
+    head_branch = github_app.payload["check_run"]["check_suite"]["head_branch"]
+
+    if github_app.payload["requested_action"]["identifier"] == "fix_rubocop_notices":
+        repo_dir = clone_repository(
+            full_repo_name,
+            repository,
+            head_branch,
+            installation_token=github_app.github_app_installation.token,
+        )
+
+        # Automatically correct RuboCop style errors
+        # TODO: fix comand
+        command = f"pylint {repo_dir}/{repository}/**/*.py -f json"
+        report = subprocess.getoutput(command)
+
+        # output = json.loads(report)
+        try:
+            repo = git.Repo(f"{repo_dir}/{repository}")
+            repo.config_writer().set_value("user", "name", config.GITHUB_APP_USER_NAME).release()
+            repo.config_writer().set_value("user", "email", config.GITHUB_APP_USER_EMAIL).release()
+            repo.git.add(update=True)
+            repo.index.commit("Automatically fix Octo RuboCop notices.")
+            origin = repo.remote(name="origin")
+            origin.push()
+        except:
+            print("failed to commit and push")
+            # # Nothing to commit!
+            # print("Nothing to commit")
+        finally:
+            shutil.rmtree(repo_dir, ignore_errors=True)
+
+
+def clone_repository(full_repo_name, repository, ref, installation_token, clean=False):
+    repo_dir = tempfile.mkdtemp()
+    git.Git(repo_dir).clone(f"https://x-access-token:{installation_token}@github.com/{full_repo_name}.git")
     # TODO: fix pull and chekout
-    # repo.pull()
-    # repo.checkout(ref)
-    return repository
+    repo = git.Repo(f"{repo_dir}/{repository}")
+    repo.pull()
+    repo.checkout(ref)
+    if clean:
+        shutil.rmtree(tempdir, ignore_errors=True)
+    return repo_dir
 
 
 if __name__ == "__main__":
