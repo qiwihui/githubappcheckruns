@@ -3,14 +3,14 @@ from tempfile import tempdir
 import config
 import git
 import json
-import os
 import re
+import requests
 import shutil
 import tempfile
-from pathlib import Path
 from datetime import datetime
 from flask import Flask
 from github_flask import GithubAppFlask
+from pathlib import Path
 
 
 app = Flask(__name__)
@@ -67,6 +67,7 @@ def initiate_check_run():
             repository,
             head_sha,
             installation_token=github_app.github_app_installation.token,
+            clean=True,
         )
 
         command = f"pylint {repo_dir}/{repository}/**/*.py -f json"
@@ -151,6 +152,7 @@ def take_requested_action():
     full_repo_name = github_app.payload["repository"]["full_name"]
     repository = github_app.payload["repository"]["name"]
     head_branch = github_app.payload["check_run"]["check_suite"]["head_branch"]
+    check_run_id = github_app.payload["check_run"]["id"]
 
     if github_app.payload["requested_action"]["identifier"] == "fix_rubocop_notices":
         repo_dir = clone_repository(
@@ -164,16 +166,26 @@ def take_requested_action():
         # TODO: fix comand
         command = f"pylint {repo_dir}/{repository}/**/*.py -f json"
         report = subprocess.getoutput(command)
-
         # output = json.loads(report)
+
+        # create new branch
+        new_branch = f"fix_rubocop_notices_{check_run_id}"
+        pushed = False
         try:
             repo = git.Repo(f"{repo_dir}/{repository}")
+            current = repo.create_head(new_branch)
+            current.checkout()
             repo.config_writer().set_value("user", "name", config.GITHUB_APP_USER_NAME).release()
             repo.config_writer().set_value("user", "email", config.GITHUB_APP_USER_EMAIL).release()
-            repo.git.add(update=True)
-            repo.index.commit("Automatically fix Octo RuboCop notices.")
-            origin = repo.remote(name="origin")
-            origin.push()
+            if repo.index.diff(None) or repo.untracked_files:
+                repo.git.add(update=True)
+                repo.git.commit("Automatically fix Octo RuboCop notices.")
+                origin = repo.remote(name="origin")
+                origin.push()
+                repo.git.push("--set-upstream", "origin", current)
+                pushed = True
+            else:
+                print("no changes")
         except:
             print("failed to commit and push")
             # # Nothing to commit!
@@ -181,14 +193,24 @@ def take_requested_action():
         finally:
             shutil.rmtree(repo_dir, ignore_errors=True)
 
+        if pushed:
+            # create pull request
+            client = github_app.github_app_installation.get_github_client()
+            repo = client.get_repo(full_repo_name)
+            body = """Automatically fix Octo RuboCop notices."""
+            pr = repo.create_pull(
+                title="Automatically fix Octo RuboCop notices.", body=body, head=new_branch, base="master"
+            )
+            print(f"Pull Request number: {pr.number}")
+
 
 def clone_repository(full_repo_name, repository, ref, installation_token, clean=False):
     repo_dir = tempfile.mkdtemp()
     git.Git(repo_dir).clone(f"https://x-access-token:{installation_token}@github.com/{full_repo_name}.git")
-    # TODO: fix pull and chekout
+    # pull and chekout
     repo = git.Repo(f"{repo_dir}/{repository}")
-    repo.pull()
-    repo.checkout(ref)
+    repo.git.checkout(ref)
+    repo.git.pull()
     if clean:
         shutil.rmtree(tempdir, ignore_errors=True)
     return repo_dir
