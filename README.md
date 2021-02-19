@@ -38,7 +38,7 @@ b. get app id
 
 select repository
 
-4. run server 
+4. run server
 
 ```shell
 python main.py

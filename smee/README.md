@@ -3,4 +3,4 @@ smee client
 
 
 npm i
-np
+npp run smee
